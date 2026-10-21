@@ -52,14 +52,23 @@ RFQ 접수부터 견적 등록까지를 하나의 Agent 흐름으로 연결합�
 
 ```mermaid
 flowchart LR
-    FE[Frontend] --> BE[Spring Boot Backend]
-    BE -- "POST /runs · /resume" --> AI[AI Agent Server<br/>LangGraph SG1~4]
-    AI -- "진행 이벤트" --> BE
-    AI -- "MCP 도구 호출" --> BMCP[business-mcp]
-    AI -- "MCP 도구 호출" --> RMCP[rag-mcp]
-    BMCP -- "/internal API" --> BE
-    RMCP -- "/internal API" --> BE
-    BE --> DB[(PostgreSQL + pgvector)]
+    FE[프론트] -->|RFQ·담당자 결정| API
+    subgraph BE[Spring Boot]
+        API[업무 API]
+        RELAY[Outbox 발행기]
+        CONSUMER[MQ 소비자]
+    end
+    API -->|작업과 outbox 저장| DB[(Supabase PostgreSQL + pgvector)]
+    DB -->|미발행 요청 조회| RELAY
+    RELAY -->|실행·재개 명령| MQ[(RabbitMQ)]
+    MQ --> CONSUMER
+    CONSUMER -->|Agent HTTP| AG[Agent]
+    API -.->|개발용: MQ를 끄면 직접 HTTP| AG
+    AG -->|업무 조회| BM[business MCP]
+    BM -->|내부 API| API
+    AG -->|기존 문서 검색| RAG[RAG MCP]
+    RAG -->|벡터 검색| DB
+    AG -->|결과·진행 이벤트 HTTP| API
 ```
 
 - Agent는 DB에 직접 접근하지 않습니다. 모든 데이터는 MCP 도구로 받고, MCP 서버는 Spring 내부 API를 거칩니다.
